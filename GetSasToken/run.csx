@@ -16,25 +16,25 @@ public static async Task<object> Run(HttpRequestMessage req, TraceWriter log)
 
     if (data.container == null) {
         return req.CreateResponse(HttpStatusCode.BadRequest, new {
-            error = "Specify value for 'container'"
+            error = "Specify value for 'container' and 'permissions'"
         });
     }
 
-    var token = await GetStorageTokenAsync((string) data.container);
+    var token = await GetStorageTokenAsync((string) data.container, (StoragePermissions) data.permissions);
 
     return req.CreateResponse(HttpStatusCode.OK, new {
         token = token.RawToken
     });
 }
 
-private static Task<StorageToken> GetStorageTokenAsync(string containerName)
+private static Task<StorageToken> GetStorageTokenAsync(string containerName, StoragePermissions permissions)
 {
     const string dummyBlobName = "blob";
     
     var controller = new MyStorageController();
     var resolver = new Resolver(containerName, dummyBlobName);
     var request = new StorageTokenRequest() {
-        Permissions = StoragePermissions.Read,
+        Permissions = permissions,
         TargetFile = new MobileServiceFile() { Id = containerName, ParentId = containerName }
     };
 
@@ -90,7 +90,4 @@ public class Resolver : IContainerNameResolver
         return Task.FromResult(result);
     }
 } 
-
-
-
 
