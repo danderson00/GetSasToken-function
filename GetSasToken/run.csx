@@ -13,8 +13,8 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
         });
     }
 
-    // TODO: serialize the permissions into an enum
-    var permissions = SharedAccessBlobPermissions.Read | SharedAccessBlobPermissions.Write | SharedAccessBlobPermissions.Create;
+    var permissions = SharedAccessBlobPermissions.Read; // default to read permissions
+    Enum.TryParse(data.permissions.ToString(), out permissions);
 
     var storageAccount = CloudStorageAccount.Parse(CloudConfigurationManager.GetSetting("AzureWebJobsStorage"));
     var blobClient = storageAccount.CreateCloudBlobClient();
