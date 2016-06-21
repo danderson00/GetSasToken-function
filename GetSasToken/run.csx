@@ -1,93 +1,91 @@
-#r "Newtonsoft.Json"
-
-using System; 
-using System.Net; 
-using Newtonsoft.Json;
-using System.Diagnostics;
-using System.Threading.Tasks;
-using Microsoft.Azure.Mobile.Server.Files;
-using Microsoft.Azure.Mobile.Server.Files.Controllers;
+using System.Net;
+using Microsoft.WindowsAzure.Storage;
+using Microsoft.WindowsAzure.Storage.Blob;
 using Microsoft.Azure;
 
-public static async Task<object> Run(HttpRequestMessage req, TraceWriter log)
-{ 
-    string jsonContent = await req.Content.ReadAsStringAsync();
-    dynamic data = JsonConvert.DeserializeObject(jsonContent);
+public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceWriter log)
+{
+    dynamic data = await req.Content.ReadAsAsync<object>();
 
     if (data.container == null) {
         return req.CreateResponse(HttpStatusCode.BadRequest, new {
-            error = "Specify value for 'container' and 'permissions'"
+            error = "Specify value for 'container'"
         });
     }
 
-    var token = await GetStorageTokenAsync((string) data.container, (StoragePermissions) data.permissions);
+    // TODO: serialize the permissions into an enum
+    var permissions = SharedAccessBlobPermissions.Read | SharedAccessBlobPermissions.Write | SharedAccessBlobPermissions.Create;
+
+    var storageAccount = CloudStorageAccount.Parse(CloudConfigurationManager.GetSetting("AzureWebJobsStorage"));
+    var blobClient = storageAccount.CreateCloudBlobClient();
+    var container = blobClient.GetContainerReference(data.container.ToString());
+
+    var sasToken =
+        data.blobName != null ?
+            GetBlobSasToken(container, data.blobName.ToString(), permissions) :
+            GetContainerSasToken(container, permissions);
 
     return req.CreateResponse(HttpStatusCode.OK, new {
-        token = token.RawToken
+        token = sasToken,
+        uri = container.Uri + sasToken
     });
 }
 
-private static Task<StorageToken> GetStorageTokenAsync(string containerName, StoragePermissions permissions)
+public static string GetBlobSasToken(CloudBlobContainer container, string blobName, SharedAccessBlobPermissions permissions, string policyName = null)
 {
-    const string dummyBlobName = "blob";
-    
-    var controller = new MyStorageController();
-    var resolver = new Resolver(containerName, dummyBlobName);
-    var request = new StorageTokenRequest() {
-        Permissions = permissions,
-        TargetFile = new MobileServiceFile() { Id = containerName, ParentId = containerName }
-    };
+    string sasBlobToken;
 
-    return controller.GetStorageTokenAsync(containerName, request, resolver);
+    // Get a reference to a blob within the container.
+    // Note that the blob may not exist yet, but a SAS can still be created for it.
+    CloudBlockBlob blob = container.GetBlockBlobReference(blobName);
+
+    if (policyName == null) {
+        var adHocSas = CreateAdHocSasPolicy(permissions);
+
+        //Generate the shared access signature on the blob, setting the constraints directly on the signature.
+        sasBlobToken = blob.GetSharedAccessSignature(adHocSas);
+    }
+    else {
+        // Generate the shared access signature on the blob. In this case, all of the constraints for the
+        // shared access signature are specified on the container's stored access policy.
+        sasBlobToken = blob.GetSharedAccessSignature(null, policyName);
+    } 
+
+    return sasBlobToken;
 }
-
-// create subclass because StorageController is abstract
-public class MyStorageController : StorageController<string>
-{
-    public MyStorageController() : base(new CustomAzureStorageProvider()) { }
-}
-
-public class CustomAzureStorageProvider : AzureStorageProvider
-{
-    public CustomAzureStorageProvider() : base(GetConnectionString())
-    { }
  
-    internal static string GetConnectionString(string appSettingName = "AzureWebJobsStorage")
-    {
-        if (appSettingName == null) {
-            throw new ArgumentNullException("appSettingName");
-        }
+public static string GetContainerSasToken(CloudBlobContainer container, SharedAccessBlobPermissions permissions, string storedPolicyName = null)
+{
+    string sasContainerToken;
 
-        var connectionString = CloudConfigurationManager.GetSetting("AzureWebJobsStorage");
+    // If no stored policy is specified, create a new access policy and define its constraints.
+    if (storedPolicyName == null) {
+        var adHocSas = CreateAdHocSasPolicy(permissions);
 
-        if (connectionString == null) {
-            throw new ArgumentException($"App Setting is missing: {appSettingName}");
-        }
-
-        return connectionString;
+        //Generate the shared access signature on the container, setting the constraints directly on the signature.
+        sasContainerToken = container.GetSharedAccessSignature(adHocSas, null);
     }
+    else {
+        // Generate the shared access signature on the container. In this case, all of the constraints for the
+        // shared access signature are specified on the stored access policy, which is provided by name.
+        // It is also possible to specify some constraints on an ad-hoc SAS and others on the stored access policy.
+        // However, a constraint must be specified on one or the other; it cannot be specified on both.
+        sasContainerToken = container.GetSharedAccessSignature(null, storedPolicyName);
+    }
+
+    return sasContainerToken;
 }
 
-public class Resolver : IContainerNameResolver
+private static SharedAccessBlobPolicy CreateAdHocSasPolicy(SharedAccessBlobPermissions permissions)
 {
-    private string containerName;
-    private string blobName;
+    // Create a new access policy and define its constraints.
+    // Note that the SharedAccessBlobPolicy class is used both to define the parameters of an ad-hoc SAS, and 
+    // to construct a shared access policy that is saved to the container's shared access policies. 
 
-    public Resolver(string containerName, string blobName)
-    {
-        this.containerName = containerName;
-        this.blobName = blobName;
-    }
-
-    public Task<string> GetFileContainerNameAsync(string tableName, string recordId, string fileName)
-    {
-        return Task.FromResult(containerName);
-    }
-
-    public Task<IEnumerable<string>> GetRecordContainerNames(string tableName, string recordId)
-    {
-        IEnumerable<string> result = new[] { $"{containerName}/{blobName}" };
-        return Task.FromResult(result);
-    }
-} 
-
+    return new SharedAccessBlobPolicy() {
+        // Set start time to five minutes before now to avoid clock skew.
+        SharedAccessStartTime = DateTime.UtcNow.AddMinutes(-5),
+        SharedAccessExpiryTime = DateTime.UtcNow.AddHours(24),
+        Permissions = permissions
+    };
+}
