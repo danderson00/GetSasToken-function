@@ -61,6 +61,8 @@ FOR /F %%d in ('DIR /a:d /B') DO (
         Echo Installing packages for %%d
         call npm install 
     )
+
+    cd ..
 )
 
 :: NuGet package restore
