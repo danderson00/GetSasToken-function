@@ -22,9 +22,9 @@ function generateSasToken(context, container, blobName, permissions) {
     // Create a SAS token that expires in an hour
     // Set start time to five minutes ago to avoid clock skew.
     var startDate = new Date();
+    startDate.setMinutes(startDate.getMinutes() - 5);
     var expiryDate = new Date(startDate);
     expiryDate.setMinutes(startDate.getMinutes() + 60);
-    startDate.setMinutes(startDate.getMinutes() - 5);
 
     permissions = !permissions ? azure.BlobUtilities.SharedAccessPermissions.READ : permissions; 
 
