@@ -1,11 +1,9 @@
 var azure = require('azure-storage');
 
 module.exports = function(context, req) {
-    
     if (req.body.container) {
-       generateSasToken(context, req.body.container, req.body.blobName, req.body.permissions);
-    }
-    else {
+        context.res = generateSasToken(context, req.body.container, req.body.blobName, req.body.permissions);
+    } else {
         context.res = {
             status: 400,
             body: "Specify a value for 'container'"
@@ -26,24 +24,18 @@ function generateSasToken(context, container, blobName, permissions) {
     var expiryDate = new Date(startDate);
     expiryDate.setMinutes(startDate.getMinutes() + 60);
 
-    permissions = !permissions ? azure.BlobUtilities.SharedAccessPermissions.READ : permissions; 
+    permissions = permissions || azure.BlobUtilities.SharedAccessPermissions.READ;
 
     var sharedAccessPolicy = {
-      AccessPolicy: {
-        Permissions: permissions,
-        Start: startDate,
-        Expiry: expiryDate
-      }
+        AccessPolicy: {
+            Permissions: permissions,
+            Start: startDate,
+            Expiry: expiryDate
+        }
     };
     
-    var sasToken = 
-        blobService.generateSharedAccessSignature(
-            container, blobName, sharedAccessPolicy);
-    var sasUrl = blobService.getUrl(container, blobName, sasToken, true);        
-
-    context.res = {
-        token: sasToken,
-        uri: sasUrl
-    };     
-    
+    return {
+        token: blobService.generateSharedAccessSignature(container, blobName, sharedAccessPolicy),
+        uri: blobService.getUrl(container, blobName, sasToken, true)
+    };
 }
