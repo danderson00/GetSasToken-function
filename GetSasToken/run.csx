@@ -85,7 +85,7 @@ private static SharedAccessBlobPolicy CreateAdHocSasPolicy(SharedAccessBlobPermi
     return new SharedAccessBlobPolicy() {
         // Set start time to five minutes before now to avoid clock skew.
         SharedAccessStartTime = DateTime.UtcNow.AddMinutes(-5),
-        SharedAccessExpiryTime = DateTime.UtcNow.AddHours(24),
+        SharedAccessExpiryTime = DateTime.UtcNow.AddHours(1),
         Permissions = permissions
     };
 }
