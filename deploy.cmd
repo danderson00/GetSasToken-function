@@ -52,6 +52,13 @@ IF NOT DEFINED KUDU_SYNC_CMD (
 :: Deployment
 :: ----------
 
+echo "Installing npm packages"
+
+FOR /F %%d in ('DIR "package.json" /S /B') DO ( 
+  cd %%d
+  call npm install 
+)
+
 :: NuGet package restore
 echo "Restoring function packages"
 
